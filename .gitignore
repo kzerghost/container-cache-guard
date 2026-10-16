@@ -1,0 +1,33 @@
+# Host secrets, credentials and runtime data
+.env
+.env.*
+!.env.example
+ui-password.txt
+*password*.txt
+*.pem
+*.key
+id_ed25519*
+id_rsa*
+secrets/
+data/
+backups/
+validation/
+results/
+*.config
+*.log
+audit.jsonl
+before.json
+intent.json
+done.json
+business-before.txt
+
+# Local caches and exports
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.tar
+*.tar.gz
+*.zip
+.DS_Store
+Thumbs.db

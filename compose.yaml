@@ -1,0 +1,37 @@
+name: container-cache-guard
+
+services:
+  guard:
+    image: ${GUARD_IMAGE:-ghcr.io/kzerghost/container-cache-guard:0.2.2}
+    pull_policy: missing
+    user: "0:0"
+    environment:
+      ALLOWED_HOSTS: "${NAS_IP:?Set NAS_IP in .env}:${UI_PORT:-18764}"
+    ports:
+      - "${NAS_IP:?Set NAS_IP in .env}:${UI_PORT:-18764}:8080"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 96m
+    restart: "no"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/packages/ContainerManager/etc:/synology-cache:rw
+      - /var/packages/ContainerManager/INFO:/synology-info:ro
+      - backups:/data
+    secrets:
+      - ui_password
+    logging:
+      driver: json-file
+      options:
+        max-size: "2m"
+        max-file: "2"
+
+volumes:
+  backups:
+    name: container-cache-guard_backups
+
+secrets:
+  ui_password:
+    file: ${GUARD_PASSWORD_FILE:?Set an absolute GUARD_PASSWORD_FILE in .env}

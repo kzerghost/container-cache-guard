@@ -1,0 +1,130 @@
+name: Test and publish
+
+'on':
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Run standard-library tests
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: python -m unittest discover -v
+      - name: Validate Compose interpolation and schema
+        env:
+          GUARD_IMAGE: ghcr.io/kzerghost/container-cache-guard:0.2.2
+          NAS_IP: 192.168.1.100
+          GUARD_PASSWORD_FILE: /tmp/cache-guard-ci-password.txt
+        run: |
+          (umask 077; printf '%s\n' 'ci-fixture-password-not-for-deployment' > "$GUARD_PASSWORD_FILE")
+          docker compose config --quiet
+
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      digest: ${{ steps.image.outputs.digest }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Verify release version
+        id: release
+        shell: bash
+        run: |
+          release_version="${GITHUB_REF_NAME#v}"
+          [[ "$release_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$release_version" == "$(tr -d '\r\n' < VERSION)" ]]
+          printf 'version=%s\n' "$release_version" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish the tested version
+        id: image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64
+          tags: |
+            ghcr.io/kzerghost/container-cache-guard:${{ steps.release.outputs.version }}
+            ghcr.io/kzerghost/container-cache-guard:latest
+          build-args: APP_VERSION=${{ steps.release.outputs.version }}
+          labels: org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Pull the published digest and verify runtime imports
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+        run: |
+          docker run --rm --read-only --network none --cap-drop ALL \
+            --entrypoint python "ghcr.io/kzerghost/container-cache-guard@$IMAGE_DIGEST" \
+            -c 'import guard, engine, service; import pathlib; assert {p.name for p in pathlib.Path("/app").iterdir()} == {"guard.py", "engine.py", "service.py", "index.html"}; print("Published image imports and application file allowlist passed")'
+      - name: Record image digest
+        env:
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          printf 'Published ghcr.io/kzerghost/container-cache-guard:%s\n\nDigest: %s\n' "$RELEASE_VERSION" "$IMAGE_DIGEST" >> "$GITHUB_STEP_SUMMARY"
+
+  release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Publish GitHub Release and deployment assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ needs.publish.outputs.version }}
+          IMAGE_DIGEST: ${{ needs.publish.outputs.digest }}
+        run: |
+          cp .env.example default.env.example
+          cat > /tmp/release-notes.md <<EOF
+          Container Cache Guard $RELEASE_VERSION
+
+          Anonymous image pull (no registry login required):
+          \`ghcr.io/kzerghost/container-cache-guard:$RELEASE_VERSION\`
+
+          Digest: \`$IMAGE_DIGEST\`
+
+          Download compose.yaml and default.env.example; rename default.env.example to .env and configure your NAS IP and local password file. See README.md for deployment and compatibility. Keep existing passwords and the backup volume when updating.
+
+          Changes: https://github.com/kzerghost/container-cache-guard/blob/v$RELEASE_VERSION/CHANGELOG.md
+          EOF
+          gh release create "$GITHUB_REF_NAME" --verify-tag \
+            --title "v$RELEASE_VERSION" --notes-file /tmp/release-notes.md \
+            compose.yaml default.env.example README.md LICENSE SECURITY.md
