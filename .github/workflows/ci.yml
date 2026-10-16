@@ -87,7 +87,7 @@ jobs:
         run: |
           docker run --rm --read-only --network none --cap-drop ALL \
             --entrypoint python "ghcr.io/kzerghost/container-cache-guard@$IMAGE_DIGEST" \
-            -c 'import guard, engine, service; import pathlib; assert {p.name for p in pathlib.Path("/app").iterdir()} == {"guard.py", "engine.py", "service.py", "index.html"}; print("Published image imports and application file allowlist passed")'
+            -c 'import guard, engine, service; import pathlib; assert {p.name for p in pathlib.Path("/app").iterdir()} == {"guard.py", "engine.py", "service.py", "index.html", "LICENSE"}; print("Published image imports and application file allowlist passed")'
       - name: Record image digest
         env:
           IMAGE_DIGEST: ${{ steps.image.outputs.digest }}

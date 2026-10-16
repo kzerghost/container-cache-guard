@@ -101,7 +101,7 @@ python -m unittest discover -v
 
 GitHub Actions 在主分支和 PR 运行测试并校验 Compose。只有与 `VERSION` 一致的 `vX.Y.Z` 标签通过测试后才构建 `linux/amd64` 镜像，发布固定版本及 `latest` 标签，并创建带部署附件的 GitHub Release。发布使用工作流的 `GITHUB_TOKEN`，不会连接或更新 NAS。
 
-`.gitignore` 排除本地密码、配置、缓存和备份；`.dockerignore` 仅允许四个运行文件进入构建上下文。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+`.gitignore` 排除本地密码、配置、缓存和备份；`.dockerignore` 仅允许四个运行文件及许可证进入构建上下文。变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 许可证
 

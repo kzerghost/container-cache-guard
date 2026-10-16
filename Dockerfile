@@ -6,6 +6,6 @@ LABEL org.opencontainers.image.title="Container Cache Guard" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.version="${APP_VERSION}"
 WORKDIR /app
-COPY guard.py engine.py service.py index.html ./
+COPY guard.py engine.py service.py index.html LICENSE ./
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 ENTRYPOINT ["python", "service.py"]
